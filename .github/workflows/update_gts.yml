@@ -1,0 +1,52 @@
+name: Update GTS Listings
+
+on:
+  workflow_dispatch:
+    inputs:
+      listing_data:
+        description: 'JSON payload of the Pokémon trade'
+        required: true
+        type: string
+
+jobs:
+  update-json:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Update gts_listings.json via Python script
+        env:
+          NEW_LISTING: ${{ github.event.inputs.listing_data }}
+        run: |
+          python -c '
+          import json, os
+          
+          file_path = "gts_listings.json"
+          
+          # Load existing listings or start fresh
+          if os.path.exists(file_path):
+              with open(file_path, "r") as f:
+                  listings = json.load(f)
+          else:
+              listings = []
+              
+          # Parse the new listing passed from the workflow input
+          new_item = json.loads(os.environ["NEW_LISTING"])
+          listings.append(new_item)
+          
+          # Save back to file
+          with open(file_path, "w") as f:
+              json.dump(listings, f, indent=2)
+          '
+
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Add new GTS listing via automated workflow"
+          file_pattern: "gts_listings.json"
