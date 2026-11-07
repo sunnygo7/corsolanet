@@ -1,15 +1,19 @@
-name: Update GTS Listings
+name: Update GTS Data
 
 on:
   workflow_dispatch:
     inputs:
-      listing_data:
-        description: 'JSON payload of the Pokémon trade'
+      action_type:
+        description: 'Action type (upload or register)'
+        required: true
+        type: string
+      payload:
+        description: 'JSON payload of data'
         required: true
         type: string
 
 jobs:
-  update-json:
+  update-data:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -20,33 +24,39 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Update gts_listings.json via Python script
+      - name: Process data via Python
         env:
-          NEW_LISTING: ${{ github.event.inputs.listing_data }}
+          ACTION_TYPE: ${{ github.event.inputs.action_type }}
+          PAYLOAD: ${{ github.event.inputs.payload }}
         run: |
           python -c '
           import json, os
           
-          file_path = "gts_listings.json"
+          action = os.environ["ACTION_TYPE"]
+          data = json.loads(os.environ["PAYLOAD"])
           
-          # Load existing listings or start fresh
-          if os.path.exists(file_path):
-              with open(file_path, "r") as f:
-                  listings = json.load(f)
-          else:
-              listings = []
-              
-          # Parse the new listing passed from the workflow input
-          new_item = json.loads(os.environ["NEW_LISTING"])
-          listings.append(new_item)
-          
-          # Save back to file
-          with open(file_path, "w") as f:
-              json.dump(listings, f, indent=2)
+          if action == "upload":
+              file_path = "gts_listings.json"
+              listings = json.load(open(file_path)) if os.path.exists(file_path) else []
+              listings.append(data)
+              with open(file_path, "w") as f:
+                  json.dump(listings, f, indent=2)
+                  
+          elif action == "register":
+              file_path = "gts_accounts.json"
+              accounts = json.load(open(file_path)) if os.path.exists(file_path) else {}
+              username = data["username"]
+              accounts[username] = {
+                  "password_hash": data["password_hash"],
+                  "security_question": data["security_question"],
+                  "answer_hash": data["answer_hash"]
+              }
+              with open(file_path, "w") as f:
+                  json.dump(accounts, f, indent=2)
           '
 
       - name: Commit and push changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Add new GTS listing via automated workflow"
-          file_pattern: "gts_listings.json"
+          commit_message: "GTS update: ${{ github.event.inputs.action_type }}"
+          file_pattern: "gts_listings.json gts_accounts.json"
