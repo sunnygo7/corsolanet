@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       action_type:
-        description: 'Action type (upload or register)'
+        description: 'Action type (upload, claim, clear_hexocc, or register)'
         required: true
         type: string
       payload:
@@ -20,6 +20,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Ensure JSON files exist
+        run: |
+          if [ ! -f gts_listings.json ]; then echo '{"listings": [], "hexocc": []}' > gts_listings.json; fi
+          if [ ! -f gts_accounts.json ]; then echo '{}' > gts_accounts.json; fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -37,23 +42,44 @@ jobs:
           action = os.environ["ACTION_TYPE"]
           data = json.loads(os.environ["PAYLOAD"])
           
+          listings_path = "gts_listings.json"
+          db = {"listings": [], "hexocc": []}
+          if os.path.exists(listings_path):
+              try:
+                  loaded = json.load(open(listings_path))
+                  if isinstance(loaded, dict):
+                      db = loaded
+                  elif isinstance(loaded, list):
+                      db = {"listings": loaded, "hexocc": []}
+              except:
+                  pass
+          
           if action == "upload":
-              file_path = "gts_listings.json"
-              listings = json.load(open(file_path)) if os.path.exists(file_path) else []
-              listings.append(data)
-              with open(file_path, "w") as f:
-                  json.dump(listings, f, indent=2)
+              db["listings"].append(data)
+              
+          elif action == "claim":
+              index = data["index"]
+              buyer_hex = data["hexocc"]
+              if 0 <= index < len(db["listings"]):
+                  item = db["listings"].pop(index)
+                  item["hexocc"] = buyer_hex
+                  db["hexocc"].append(item)
                   
+          elif action == "clear_hexocc":
+              trade_id = data.get("trade_id")
+              db["hexocc"] = [item for item in db["hexocc"] if item.get("Data") != trade_id]
+              
           elif action == "register":
               file_path = "gts_accounts.json"
               accounts = json.load(open(file_path)) if os.path.exists(file_path) else {}
-              # Store username strictly in lowercase to prevent case-variation duplicates
               username = data["username"].lower()
-              accounts[username] = {
-                  "password_hash": data["password_hash"]
-              }
+              accounts[username] = {"password_hash": data["password_hash"]}
               with open(file_path, "w") as f:
                   json.dump(accounts, f, indent=2)
+              exit()
+
+          with open(listings_path, "w") as f:
+              json.dump(db, f, indent=2)
           '
 
       - name: Commit and push changes
